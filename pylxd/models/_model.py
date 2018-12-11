@@ -119,6 +119,7 @@ class Model(object):
 
     def __getattribute__(self, name):
         try:
+            #print("looking for model", Model, "and attr", name)
             return super(Model, self).__getattribute__(name)
         except AttributeError:
             if name in self.__attributes__:

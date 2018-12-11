@@ -71,8 +71,6 @@ class _APINode(object):
         # Special case for storage_pools which needs to become 'storage-pools'
         if name == 'storage_pools':
             name = 'storage-pools'
-        if name == 'cluster_members':
-            name = 'cluster/members'
         return self.__class__('{}/{}'.format(self._api_endpoint, name),
                               cert=self.session.cert,
                               verify=self.session.verify)
@@ -85,6 +83,7 @@ class _APINode(object):
         :returns: A new _APINode(with the new item tagged on as /<item>
         :rtype: _APINode
         """
+
         return self.__class__('{}/{}'.format(self._api_endpoint, item),
                               cert=self.session.cert,
                               verify=self.session.verify,
@@ -102,6 +101,7 @@ class _APINode(object):
         """
         if response.status_code not in allowed_status_codes:
             if response.status_code == 404:
+                print("%s: %s"%(response.url, response))
                 raise exceptions.NotFound(response)
             raise exceptions.LXDAPIException(response)
 
@@ -153,15 +153,14 @@ class _APINode(object):
     def post(self, *args, **kwargs):
         """Perform an HTTP POST."""
         kwargs['timeout'] = kwargs.get('timeout', self._timeout)
-        target = kwargs.get('target', None)
-        kwargs.pop("target", None)
+        target = kwargs.pop("target", None)
 
         if target is not None:
-            endpoint = "{}?target={}".format(self._api_endpoint, target)
-        else:
-            endpoint = self._api_endpoint
+            params = kwargs.get("params", {})
+            params["target"] = target
+            kwargs["params"] = params
 
-        response = self.session.post(endpoint, *args, **kwargs)
+        response = self.session.post(self._api_endpoint, *args, **kwargs)
         # Prior to LXD 2.0.3, successful synchronous requests returned 200,
         # rather than 201.
         self._assert_response(response, allowed_status_codes=(200, 201, 202))
@@ -306,7 +305,7 @@ class Client(object):
                 requests.exceptions.InvalidURL):
             raise exceptions.ClientConnectionFailed()
 
-        self.cluster_members = managers.ClusterMemberManager(self)
+        self.cluster = managers.ClusterManager(self)
         self.certificates = managers.CertificateManager(self)
         self.containers = managers.ContainerManager(self)
         self.images = managers.ImageManager(self)

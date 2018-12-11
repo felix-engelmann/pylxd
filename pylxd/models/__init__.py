@@ -1,4 +1,7 @@
-from pylxd.models.cluster_member import ClusterMember  # NOQA
+from pylxd.models.cluster import ( # NOQA
+    Cluster,  # NOQA
+    ClusterMember,  # NOQA
+)
 from pylxd.models.certificate import Certificate  # NOQA
 from pylxd.models.container import Container, Snapshot  # NOQA
 from pylxd.models.image import Image  # NOQA
