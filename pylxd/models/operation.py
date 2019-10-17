@@ -13,12 +13,27 @@
 #    under the License.
 
 import warnings
+import os
 
 from pylxd import exceptions
+from six.moves.urllib import parse
+
+
+# Global used to record which warnings have been issues already for unknown
+# attributes.
+_seen_attribute_warnings = set()
 
 
 class Operation(object):
-    """A LXD operation."""
+    """An LXD operation.
+
+    If the LXD server sends attributes that this version of pylxd is unaware of
+    then a warning is printed.  By default the warning is issued ONCE and then
+    supressed for every subsequent attempted setting.  The warnings can be
+    completely suppressed by setting the environment variable PYLXD_WARNINGS to
+    'none', or always displayed by setting the PYLXD_WARNINGS variable to
+    'always'.
+    """
 
     __slots__ = [
         '_client',
@@ -33,12 +48,13 @@ class Operation(object):
         return cls.get(client, operation.id)
 
     @classmethod
+    def extract_operation_id(cls, s):
+        return os.path.split(parse.urlparse(s).path)[-1]
+
+    @classmethod
     def get(cls, client, operation_id):
         """Get an operation."""
-        if operation_id.startswith('/'):
-            operation_id = operation_id.split('/')[-1]
-        if '?' in operation_id:
-            operation_id = operation_id.split('?')[0]
+        operation_id = cls.extract_operation_id(operation_id)
         response = client.api.operations[operation_id].get()
         return cls(_client=client, **response.json()['metadata'])
 
@@ -50,6 +66,13 @@ class Operation(object):
             except AttributeError:
                 # ignore attributes we don't know about -- prevent breakage
                 # in the future if new attributes are added.
+                global _seen_attribute_warnings
+                env = os.environ.get('PYLXD_WARNINGS', '').lower()
+                if env != 'always' and key in _seen_attribute_warnings:
+                    continue
+                _seen_attribute_warnings.add(key)
+                if env == 'none':
+                    continue
                 warnings.warn(
                     'Attempted to set unknown attribute "{}" '
                     'on instance of "{}"'

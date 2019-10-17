@@ -11,6 +11,8 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+import unittest
+
 from pylxd import exceptions
 from integration.testing import IntegrationTestCase
 
@@ -153,6 +155,21 @@ class TestContainer(IntegrationTestCase):
         self.assertEqual('test\n', result.stdout)
         self.assertEqual('', result.stderr)
 
+    def test_execute_no_buffer(self):
+        """A command is executed on the container without buffering the output.
+        """
+        self.container.start(wait=True)
+        self.addCleanup(self.container.stop, wait=True)
+        buffer = []
+
+        result = self.container.execute(['echo', 'test'],
+                                        stdout_handler=buffer.append)
+
+        self.assertEqual(0, result.exit_code)
+        self.assertEqual('', result.stdout)
+        self.assertEqual('', result.stderr)
+        self.assertEqual("test\n", "".join(buffer))
+
     def test_execute_no_decode(self):
         """A command is executed on the container that isn't utf-8 decodable
         """
@@ -192,7 +209,8 @@ class TestContainer(IntegrationTestCase):
         )
 
         self.assertEqual(0, result.exit_code)
-        self.assertEqual(test_msg, result.stdout)
+        # if a handler is supplied then there is no stdout in result
+        self.assertEqual('', result.stdout)
         self.assertEqual('', result.stderr)
         self.assertEqual(stdout_msgs, [test_msg])
 
@@ -208,6 +226,7 @@ class TestContainer(IntegrationTestCase):
     # This test is commented because CRIU does NOT work
     # in LXD inside LXD
 
+    @unittest.skip("This test is broken as it assumes particular network")
     def test_migrate_running(self):
         """A running container is migrated."""
         from pylxd.client import Client
@@ -231,6 +250,7 @@ class TestContainer(IntegrationTestCase):
         self.assertEqual(client2,
                          an_migrated_container.client)
 
+    @unittest.skip("This test is broken as it assumes particular network")
     def test_migrate_local_client(self):
         """Raise ValueError, cannot migrate from local connection"""
         from pylxd.client import Client
@@ -243,6 +263,7 @@ class TestContainer(IntegrationTestCase):
         self.assertRaises(ValueError,
                           self.container.migrate, client2)
 
+    @unittest.skip("This test is broken as it assumes particular network")
     def test_migrate_stopped(self):
         """A stopped container is migrated."""
         from pylxd.client import Client

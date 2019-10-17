@@ -213,6 +213,26 @@ class TestContainer(testing.PyLXDTestCase):
         self.assertEqual(0, result.exit_code)
         self.assertEqual('test\n', result.stdout)
 
+    @testing.requires_ws4py
+    @mock.patch('pylxd.models.container._StdinWebsocket')
+    @mock.patch('pylxd.models.container._CommandWebsocketClient')
+    def test_execute_with_env(self, _CommandWebsocketClient, _StdinWebsocket):
+        """A command is executed on a container with custom env variables."""
+        fake_websocket = mock.Mock()
+        fake_websocket.data = 'test\n'
+        _StdinWebsocket.return_value = fake_websocket
+        _CommandWebsocketClient.return_value = fake_websocket
+
+        an_container = models.Container(
+            self.client, name='an-container')
+
+        result = an_container.execute(['echo', 'test'], environment={
+            "DISPLAY": ":1"
+        })
+
+        self.assertEqual(0, result.exit_code)
+        self.assertEqual('test\n', result.stdout)
+
     def test_execute_no_ws4py(self):
         """If ws4py is not installed, ValueError is raised."""
         from pylxd.models import container
@@ -236,6 +256,36 @@ class TestContainer(testing.PyLXDTestCase):
 
         self.assertRaises(TypeError, an_container.execute, 'apt-get update')
 
+    def test_raw_interactive_execute(self):
+        an_container = models.Container(self.client, name='an-container')
+
+        result = an_container.raw_interactive_execute(['/bin/bash'])
+
+        self.assertEqual(result['ws'],
+                         '/1.0/operations/operation-abc/websocket?secret=abc')
+        self.assertEqual(result['control'],
+                         '/1.0/operations/operation-abc/websocket?secret=jkl')
+
+    def test_raw_interactive_execute_env(self):
+        an_container = models.Container(self.client, name='an-container')
+
+        result = an_container.raw_interactive_execute(['/bin/bash'],
+                                                      {"PATH": "/"})
+
+        self.assertEqual(result['ws'],
+                         '/1.0/operations/operation-abc/websocket?secret=abc')
+        self.assertEqual(result['control'],
+                         '/1.0/operations/operation-abc/websocket?secret=jkl')
+
+    def test_raw_interactive_execute_string(self):
+        """A command passed as string raises a TypeError."""
+        an_container = models.Container(
+            self.client, name='an-container')
+
+        self.assertRaises(TypeError,
+                          an_container.raw_interactive_execute,
+                          'apt-get update')
+
     def test_migrate(self):
         """A container is migrated."""
         from pylxd.client import Client
@@ -255,7 +305,7 @@ class TestContainer(testing.PyLXDTestCase):
         from pylxd.client import Client
         from pylxd.exceptions import LXDAPIException
 
-        def generate_exception():
+        def generate_exception(*args, **kwargs):
             response = mock.Mock()
             response.status_code = 400
             raise LXDAPIException(response)
@@ -279,17 +329,18 @@ class TestContainer(testing.PyLXDTestCase):
             self.client, name='an-container')
         an_container.status_code = 103
 
-        def generate_exception():
+        def generate_exception(*args, **kwargs):
             response = mock.Mock()
             response.status_code = 103
             raise LXDAPIException(response)
 
         generate_migration_data.side_effect = generate_exception
 
-        an_migrated_container = an_container.migrate(client2)
+        an_migrated_container = an_container.migrate(client2, live=True)
 
         self.assertEqual('an-container', an_migrated_container.name)
         self.assertEqual(client2, an_migrated_container.client)
+        generate_migration_data.assert_called_once_with(True)
 
     def test_migrate_started(self):
         """A container is migrated."""
@@ -359,6 +410,12 @@ class TestContainer(testing.PyLXDTestCase):
         self.assertEqual(
             'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
             image.fingerprint)
+
+    def test_restore_snapshot(self):
+        """Snapshots can be restored"""
+        an_container = models.Container(
+            self.client, name='an-container')
+        an_container.restore_snapshot('thing')
 
 
 class TestContainerState(testing.PyLXDTestCase):
@@ -509,6 +566,13 @@ class TestSnapshot(testing.PyLXDTestCase):
         self.assertEqual(
             'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
             image.fingerprint)
+
+    def test_restore_snapshot(self):
+        """Snapshots can be restored from the snapshot object"""
+        snapshot = models.Snapshot(
+            self.client, container=self.container,
+            name='an-snapshot')
+        snapshot.restore(wait=True)
 
 
 class TestFiles(testing.PyLXDTestCase):

@@ -15,6 +15,7 @@ import json
 import os
 import os.path
 from collections import namedtuple
+from enum import Enum
 
 import requests
 import requests_unixsocket
@@ -31,18 +32,29 @@ from pylxd import exceptions, managers
 requests_unixsocket.monkeypatch()
 
 LXD_PATH = '.config/lxc/'
-SNAP_ROOT = '~/snap/lxd/current/'
-APT_ROOT = '~/'
-if os.path.exists(os.path.expanduser(SNAP_ROOT)):  # pragma: no cover
+SNAP_ROOT = os.path.expanduser('~/snap/lxd/current/')
+APT_ROOT = os.path.expanduser('~/')
+CERT_FILE_NAME = 'client.crt'
+KEY_FILE_NAME = 'client.key'
+# check that the cert file and key file exist at the appopriate path
+if os.path.exists(os.path.join(
+        SNAP_ROOT, LXD_PATH, CERT_FILE_NAME)):  # pragma: no cover
     CERTS_PATH = os.path.join(SNAP_ROOT, LXD_PATH)  # pragma: no cover
 else:  # pragma: no cover
     CERTS_PATH = os.path.join(APT_ROOT, LXD_PATH)  # pragma: no cover
 
 Cert = namedtuple('Cert', ['cert', 'key'])  # pragma: no cover
 DEFAULT_CERTS = Cert(
-    cert=os.path.expanduser(os.path.join(CERTS_PATH, 'client.crt')),
-    key=os.path.expanduser(os.path.join(CERTS_PATH, 'client.key'))
+    cert=os.path.expanduser(os.path.join(CERTS_PATH, CERT_FILE_NAME)),
+    key=os.path.expanduser(os.path.join(CERTS_PATH, KEY_FILE_NAME))
 )  # pragma: no cover
+
+
+class EventType(Enum):
+    All = 'all'
+    Operation = 'operation'
+    Logging = 'logging'
+    Lifecycle = 'lifecycle'
 
 
 class _APINode(object):
@@ -73,7 +85,8 @@ class _APINode(object):
             name = 'storage-pools'
         return self.__class__('{}/{}'.format(self._api_endpoint, name),
                               cert=self.session.cert,
-                              verify=self.session.verify)
+                              verify=self.session.verify,
+                              timeout=self._timeout)
 
     def __getitem__(self, item):
         """This converts python api.thing[name] -> ".../thing/name"
@@ -281,15 +294,13 @@ class Client(object):
                     endpoint, cert=cert, verify=verify, timeout=timeout)
         else:
             if 'LXD_DIR' in os.environ:
-                path = os.path.join(
-                    os.environ.get('LXD_DIR'), 'unix.socket')
+                path = os.path.join(os.environ.get('LXD_DIR'), 'unix.socket')
+            elif os.path.exists('/var/snap/lxd/common/lxd/unix.socket'):
+                path = '/var/snap/lxd/common/lxd/unix.socket'
             else:
-                if os.path.exists('/var/snap/lxd/common/lxd/unix.socket'):
-                    path = '/var/snap/lxd/common/lxd/unix.socket'
-                else:
-                    path = '/var/lib/lxd/unix.socket'
-            self.api = _APINode('http+unix://{}'.format(
-                parse.quote(path, safe='')), timeout=timeout)
+                path = '/var/lib/lxd/unix.socket'
+            endpoint = 'http+unix://{}'.format(parse.quote(path, safe=''))
+            self.api = _APINode(endpoint, timeout=timeout)
         self.api = self.api[version]
 
         # Verify the connection is valid.
@@ -300,8 +311,8 @@ class Client(object):
             self.host_info = response.json()['metadata']
 
         except (requests.exceptions.ConnectionError,
-                requests.exceptions.InvalidURL):
-            raise exceptions.ClientConnectionFailed()
+                requests.exceptions.InvalidURL) as e:
+            raise exceptions.ClientConnectionFailed(str(e))
 
         self.cluster = managers.ClusterManager(self)
         self.certificates = managers.CertificateManager(self)
@@ -362,7 +373,7 @@ class Client(object):
         url = parse.urlunparse((scheme, host, '', '', '', ''))
         return url
 
-    def events(self, websocket_client=None):
+    def events(self, websocket_client=None, event_types=None):
         """Get a websocket client for getting events.
 
         /events is a websocket url, and so must be handled differently than
@@ -373,6 +384,17 @@ class Client(object):
         An optional `websocket_client` parameter can be
         specified for implementation-specific handling
         of events as they occur.
+
+        :param websocket_client: Optional websocket client can be specified for
+         implementation-specific handling of events as they occur.
+        :type websocket_client: ws4py.client import WebSocketBaseClient
+
+        :param event_types: Optional set of event types to propagate. Omit this
+         argument or specify {EventTypes.All} to receive all events.
+        :type event_types: Set[EventType]
+
+        :returns: instance of the websocket client
+        :rtype: Option[_WebsocketClient(), :param:`websocket_client`]
         """
         if not _ws4py_installed:
             raise ValueError(
@@ -382,6 +404,14 @@ class Client(object):
 
         client = websocket_client(self.websocket_url)
         parsed = parse.urlparse(self.api.events._api_endpoint)
-        client.resource = parsed.path
+
+        resource = parsed.path
+
+        if event_types and EventType.All not in event_types:
+            query = parse.parse_qs(parsed.query)
+            query.update({'type': ','.join(t.value for t in event_types)})
+            resource = '{}?{}'.format(resource, parse.urlencode(query))
+
+        client.resource = resource
 
         return client

@@ -30,6 +30,7 @@ except ImportError:  # pragma: no cover
 from pylxd import managers
 from pylxd.exceptions import LXDAPIException
 from pylxd.models import _model as model
+from pylxd.models.operation import Operation
 
 if six.PY2:
     # Python2.7 doesn't have this natively
@@ -350,14 +351,11 @@ class Container(model.Model):
                                wait=wait)
 
     def execute(
-            self, commands, environment={}, encoding=None, decode=True,
+            self, commands, environment=None, encoding=None, decode=True,
             stdin_payload=None, stdin_encoding="utf-8",
-            stdout_handler=None, stderr_handler=None
-    ):
-        """Execute a command on the container.
-
-        In pylxd 2.2, this method will be renamed `execute` and the existing
-        `execute` method removed.
+            stdout_handler=None, stderr_handler=None):
+        """Execute a command on the container. stdout and stderr are buffered if
+        no handler is given.
 
         :param commands: The command and arguments as a list of strings
         :type commands: [str]
@@ -375,13 +373,13 @@ class Container(model.Model):
             ws4py Message object
         :param stdin_encoding: Encoding to pass text to stdin (default utf-8)
         :param stdout_handler: Callable than receive as first parameter each
-            message recived via stdout
+            message received via stdout
         :type stdout_handler: Callable[[str], None]
         :param stderr_handler: Callable than receive as first parameter each
-            message recived via stderr
+            message received via stderr
         :type stderr_handler: Callable[[str], None]
         :raises ValueError: if the ws4py library is not installed.
-        :returns: The return value, stdout and stdin
+        :returns: A tuple of `(exit_code, stdout, stderr)`
         :rtype: _ContainerExecuteResult() namedtuple
         """
         if not _ws4py_installed:
@@ -389,6 +387,9 @@ class Container(model.Model):
                 'This feature requires the optional ws4py library.')
         if isinstance(commands, six.string_types):
             raise TypeError("First argument must be a list.")
+        if environment is None:
+            environment = {}
+
         response = self.api['exec'].post(json={
             'command': commands,
             'environment': environment,
@@ -397,8 +398,8 @@ class Container(model.Model):
         })
 
         fds = response.json()['metadata']['metadata']['fds']
-        operation_id = response.json()['operation']\
-            .split('/')[-1].split('?')[0]
+        operation_id = \
+            Operation.extract_operation_id(response.json()['operation'])
         parsed = parse.urlparse(
             self.client.api.operations[operation_id].websocket._api_endpoint)
 
@@ -429,8 +430,17 @@ class Container(model.Model):
                     break
                 time.sleep(.5)  # pragma: no cover
 
-            while len(manager.websockets.values()) > 0:
-                time.sleep(.1)  # pragma: no cover
+            try:
+                stdin.close()
+            except BrokenPipeError:
+                pass
+
+            stdout.finish_soon()
+            stderr.finish_soon()
+            manager.close_all()
+
+            while not stdout.finished or not stderr.finished:
+                time.sleep(.1)  # progma: no cover
 
             manager.stop()
             manager.join()
@@ -438,15 +448,67 @@ class Container(model.Model):
             return _ContainerExecuteResult(
                 operation.metadata['return'], stdout.data, stderr.data)
 
-    def migrate(self, new_client, wait=False):
+    def raw_interactive_execute(self, commands, environment=None):
+        """Execute a command on the container interactively and returns
+        urls to websockets. The urls contain a secret uuid, and can be accesses
+        without further authentication. The caller has to open and manage
+        the websockets themselves.
+
+        :param commands: The command and arguments as a list of strings
+           (most likely a shell)
+        :type commands: [str]
+        :param environment: The environment variables to pass with the command
+        :type environment: {str: str}
+        :returns: Two urls to an interactive websocket and a control socket
+        :rtype: {'ws':str,'control':str}
+        """
+        if isinstance(commands, six.string_types):
+            raise TypeError("First argument must be a list.")
+
+        if environment is None:
+            environment = {}
+
+        response = self.api['exec'].post(json={
+            'command': commands,
+            'environment': environment,
+            'wait-for-websocket': True,
+            'interactive': True,
+        })
+
+        fds = response.json()['metadata']['metadata']['fds']
+        operation_id = response.json()['operation']\
+            .split('/')[-1].split('?')[0]
+        parsed = parse.urlparse(
+            self.client.api.operations[operation_id].websocket._api_endpoint)
+
+        return {'ws': '{}?secret={}'.format(parsed.path, fds['0']),
+                'control': '{}?secret={}'.format(parsed.path, fds['control'])}
+
+    def migrate(self, new_client, live=False, wait=False):
         """Migrate a container.
 
         Destination host information is contained in the client
         connection passed in.
 
-        If the container is running, it either must be shut down
-        first or criu must be installed on the source and destination
-        machines.
+        If the `live` param is True, then a live migration is attempted,
+        otherwise a non live one is running.
+
+        If the container is running for live migration, it either must be shut
+        down first or criu must be installed on the source and destination
+        machines and the `live` param should be True.
+
+        :param new_client: the pylxd client connection to migrate the container
+            to.
+        :type new_client: :class:`pylxd.client.Client`
+        :param live: whether to perform a live migration
+        :type live: bool
+        :param wait: if True, wait for the migration to complete
+        :type wait: bool
+        :raises: LXDAPIException if any of the API calls fail.
+        :raises: ValueError if source of target are local connections
+        :returns: the response from LXD of the new container (the target of the
+            migration and not the operation if waited on.)
+        :rtype: :class:`requests.Response`
         """
         if self.api.scheme in ('http+unix',):
             raise ValueError('Cannot migrate from a local client connection')
@@ -454,7 +516,7 @@ class Container(model.Model):
         if self.status_code == 103:
             try:
                 res = new_client.containers.create(
-                    self.generate_migration_data(), wait=wait)
+                    self.generate_migration_data(live), wait=wait)
             except LXDAPIException as e:
                 if e.response.status_code == 103:
                     self.delete()
@@ -463,19 +525,29 @@ class Container(model.Model):
                     raise e
         else:
             res = new_client.containers.create(
-                self.generate_migration_data(), wait=wait)
+                self.generate_migration_data(live), wait=wait)
         self.delete()
         return res
 
-    def generate_migration_data(self):
+    def generate_migration_data(self, live=False):
         """Generate the migration data.
 
         This method can be used to handle migrations where the client
         connection uses the local unix socket. For more information on
         migration, see `Container.migrate`.
+
+        :param live: Whether to include "live": "true" in the migration
+        :type live: bool
+        :raises: LXDAPIException if the request to migrate fails
+        :returns: dictionary of migration data suitable to send to an new
+            client to complete a migration.
+        :rtype: Dict[str, ANY]
         """
         self.sync()  # Make sure the object isn't stale
-        response = self.api.post(json={'migration': True})
+        _json = {'migration': True}
+        if live:
+            _json['live'] = True
+        response = self.api.post(json=_json)
         operation = self.client.operations.get(response.json()['operation'])
         operation_url = self.client.api.operations[operation.id]._api_endpoint
         secrets = response.json()['metadata']['metadata']
@@ -521,6 +593,28 @@ class Container(model.Model):
 
             return self.client.images.get(operation.metadata['fingerprint'])
 
+    def restore_snapshot(self, snapshot_name, wait=False):
+        """Restore a snapshot using its name.
+
+        Attempts to restore a container using a snapshot previously made.  The
+        container should be stopped, but the method does not enforce this
+        constraint, so an LXDAPIException may be raised if this method fails.
+
+        :param snapshot_name: the name of the snapshot to restore from
+        :type snapshot_name: str
+        :param wait: wait until the operation is completed.
+        :type wait: boolean
+        :raises: LXDAPIException if the the operation fails.
+        :returns: the original response from the restore operation (not the
+            operation result)
+        :rtype: :class:`requests.Response`
+        """
+        response = self.api.put(json={"restore": snapshot_name})
+        if wait:
+            self.client.operations.wait_for_operation(
+                response.json()['operation'])
+        return response
+
 
 class _CommandWebsocketClient(WebSocketBaseClient):  # pragma: no cover
     """Handle a websocket for container.execute(...) and manage decoding of the
@@ -533,6 +627,10 @@ class _CommandWebsocketClient(WebSocketBaseClient):  # pragma: no cover
         self.encoding = kwargs.pop('encoding', None)
         self.handler = kwargs.pop('handler', None)
         self.message_encoding = None
+        self.finish_off = False
+        self.finished = False
+        self.last_message_empty = False
+        self.buffer = []
         super(_CommandWebsocketClient, self).__init__(*args, **kwargs)
 
     def handshake_ok(self):
@@ -541,15 +639,28 @@ class _CommandWebsocketClient(WebSocketBaseClient):  # pragma: no cover
 
     def received_message(self, message):
         if message.data is None or len(message.data) == 0:
-            self.manager.remove(self)
+            self.last_message_empty = True
+            if self.finish_off:
+                self.finished = True
             return
+        else:
+            self.last_message_empty = False
         if message.encoding and self.message_encoding is None:
             self.message_encoding = message.encoding
         if self.handler:
             self.handler(self._maybe_decode(message.data))
-        self.buffer.append(message.data)
-        if isinstance(message, BinaryMessage):
-            self.manager.remove(self)
+        else:
+            self.buffer.append(message.data)
+        if self.finish_off and isinstance(message, BinaryMessage):
+            self.finished = True
+
+    def closed(self, code, reason=None):
+        self.finished = True
+
+    def finish_soon(self):
+        self.finish_off = True
+        if self.last_message_empty:
+            self.finished = True
 
     def _maybe_decode(self, buffer):
         if self.decode and buffer is not None:
@@ -673,3 +784,19 @@ class Snapshot(model.Model):
             operation = self.client.operations.wait_for_operation(
                 response.json()['operation'])
             return self.client.images.get(operation.metadata['fingerprint'])
+
+    def restore(self, wait=False):
+        """Restore this snapshot.
+
+        Attempts to restore a container using this snapshot.  The container
+        should be stopped, but the method does not enforce this constraint, so
+        an LXDAPIException may be raised if this method fails.
+
+        :param wait: wait until the operation is completed.
+        :type wait: boolean
+        :raises: LXDAPIException if the the operation fails.
+        :returns: the original response from the restore operation (not the
+            operation result)
+        :rtype: :class:`requests.Response`
+        """
+        return self.container.restore_snapshot(self.name, wait)
