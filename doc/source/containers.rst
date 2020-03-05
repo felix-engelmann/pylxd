@@ -112,34 +112,35 @@ you'll pass `wait=True` as well.
 
 If you were to use an actual image source, you would be able to operate
 on the container, starting, stopping, snapshotting, and deleting the
-container.
+container. You can also modify container config (limits and etc).
 
 .. code-block:: python
 
-    >>> config = {'name': 'my-container', 'source': {'type': 'image', 'alias': 'ubuntu/trusty'}}
+    >>> config = {'name': 'my-container', 'source': {'type': 'image', 'alias': 'ubuntu/trusty'} 'config': {'limits.cpu': '2'}}
     >>> container = client.containers.create(config, wait=True)
     >>> container.start()
     >>> container.freeze()
     >>> container.delete()
-   
-   
+
+
 Config line with a specific image source and a profile.
 
 .. code-block:: python
 
     >>> config = {'name': 'my-container', 'source': {'type': 'image', "mode": "pull", "server":
         "https://cloud-images.ubuntu.com/daily", "protocol": "simplestreams", 'alias': 'bionic/amd64'},
-	'profiles': ['profilename'] }
+        'profiles': ['profilename'] }
 
 
-To modify container's configuration method `save` should be called after
+To modify container's configuration method `
+` should be called after
 :class:`~container.Container` attributes changes.
 
     >>> container = client.containers.get('my-container')
     >>> container.ephemeral = False
     >>> container.devices = { 'root': { 'path': '/', 'type': 'disk', 'size': '7GB'} }
-    >>> container.save
-    
+    >>> container.save()
+
 To get state information such as a network address.
 
 .. code-block:: python
@@ -170,7 +171,7 @@ This will migrate the container from source server to destination server
 
 To migrate a live container, user the ``live=True`` parameter:
 
-..code-block:: python
+.. code-block:: python
 
     cont.migrate(client__destination, live=True, wait=True)
 
