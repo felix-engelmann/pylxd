@@ -60,6 +60,10 @@ class ModelType(type):
         for_removal = []
         managers = []
 
+        for base in bases:
+            if hasattr(base, '__attributes__'):
+                attributes.update(base.__attributes__)
+
         for key, val in attrs.items():
             if type(val) == Attribute:
                 attributes[key] = val
@@ -158,6 +162,10 @@ class Model(object):
             self.__dirty__.add(name)
         return super(Model, self).__setattr__(name, value)
 
+    def __iter__(self):
+        for attr in self.__attributes__.keys():
+            yield attr, getattr(self, attr)
+
     @property
     def dirty(self):
         return len(self.__dirty__) > 0
@@ -178,7 +186,6 @@ class Model(object):
             if key not in self.__dirty__ or rollback:
                 try:
                     setattr(self, key, val)
-                    self.__dirty__.remove(key)
                 except AttributeError:
                     # We have received an attribute from the server that we
                     # don't support in our model. Ignore this error, it

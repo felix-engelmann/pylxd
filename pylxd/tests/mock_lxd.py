@@ -1,14 +1,14 @@
 import json
 
 
-def containers_POST(request, context):
+def instances_POST(request, context):
     context.status_code = 202
     return json.dumps({
         'type': 'async',
         'operation': '/1.0/operations/operation-abc?project=default'})
 
 
-def container_POST(request, context):
+def instance_POST(request, context):
     context.status_code = 202
     if not request.json().get('migration', False):
         return {
@@ -28,7 +28,7 @@ def container_POST(request, context):
         }
 
 
-def container_PUT(request, context):
+def instance_PUT(request, context):
     context.status_code = 202
     return {
         'type': 'async',
@@ -36,7 +36,7 @@ def container_PUT(request, context):
     }
 
 
-def container_DELETE(request, context):
+def instance_DELETE(request, context):
     context.status_code = 202
     return json.dumps({
         'type': 'async',
@@ -208,23 +208,25 @@ RULES = [
             'metadata': {
                 "server_name": "an-member",
                 "enabled": 'true',
-                "member_config": [{
-                    "entity": "storage-pool",
-                    "name": "local",
-                    "key": "source",
-                    "value": "",
-                    "description":
-                        "\"source\" property for storage pool \"local\""
-                },
-                {
-                    "entity": "storage-pool",
-                    "name": "local",
-                    "key": "volatile.initial_source",
-                    "value": "",
-                    "description":
-                        "\"volatile.initial_source\" property for"
-                        " storage pool \"local\""
-                }]
+                "member_config": [
+                    {
+                        "entity": "storage-pool",
+                        "name": "local",
+                        "key": "source",
+                        "value": "",
+                        "description":
+                            "\"source\" property for storage pool \"local\""
+                    },
+                    {
+                        "entity": "storage-pool",
+                        "name": "local",
+                        "key": "volatile.initial_source",
+                        "value": "",
+                        "description":
+                            "\"volatile.initial_source\" property for"
+                            " storage pool \"local\""
+                    },
+                ]
             }
         }),
         'method': 'GET',
@@ -258,45 +260,45 @@ RULES = [
     },
 
 
-    # Containers
+    # Instances
     {
         'text': json.dumps({
             'type': 'sync',
             'metadata': [
-                'http://pylxd.test/1.0/containers/an-container',
+                'http://pylxd.test/1.0/instances/an-instance',
             ]}),
         'method': 'GET',
-        'url': r'^http://pylxd.test/1.0/containers$',
+        'url': r'^http://pylxd.test/1.0/instances$',
     },
     {
         'text': json.dumps({
             'type': 'sync',
             'metadata': [
-                'http://pylxd2.test/1.0/containers/an-container',
+                'http://pylxd2.test/1.0/instances/an-instance',
             ]}),
         'method': 'GET',
-        'url': r'^http://pylxd2.test/1.0/containers$',
+        'url': r'^http://pylxd2.test/1.0/instances$',
     },
     {
-        'text': containers_POST,
+        'text': instances_POST,
         'method': 'POST',
-        'url': r'^http://pylxd2.test/1.0/containers$',
+        'url': r'^http://pylxd2.test/1.0/instances$',
     },
     {
-        'text': containers_POST,
+        'text': instances_POST,
         'method': 'POST',
-        'url': r'^http://pylxd.test/1.0/containers$',
+        'url': r'^http://pylxd.test/1.0/instances$',
     },
     {
-        'text': containers_POST,
+        'text': instances_POST,
         'method': 'POST',
-        'url': r'^http://pylxd.test/1.0/containers\?target=an-remote',
+        'url': r'^http://pylxd.test/1.0/instances\?target=an-remote',
     },
     {
         'json': {
             'type': 'sync',
             'metadata': {
-                'name': 'an-container',
+                'name': 'an-instance',
 
                 'architecture': "x86_64",
                 'config': {
@@ -333,18 +335,19 @@ RULES = [
                 'stateful': False,
                 'status': "Running",
                 'status_code': 103,
-                'unsupportedbypylxd': "This attribute is not supported by "\
-                    "pylxd. We want to test whether the mere presence of it "\
-                    "makes it crash."
+                'unsupportedbypylxd': (
+                    "This attribute is not supported by "
+                    "pylxd. We want to test whether the mere presence of it "
+                    "makes it crash.")
             }},
         'method': 'GET',
-        'url': r'^http://pylxd2.test/1.0/containers/an-container$',
+        'url': r'^http://pylxd2.test/1.0/instances/an-instance$',
     },
     {
         'json': {
             'type': 'sync',
             'metadata': {
-                'name': 'an-container',
+                'name': 'an-instance',
 
                 'architecture': "x86_64",
                 'config': {
@@ -381,12 +384,13 @@ RULES = [
                 'stateful': False,
                 'status': "Running",
                 'status_code': 103,
-                'unsupportedbypylxd': "This attribute is not supported by "\
-                    "pylxd. We want to test whether the mere presence of it "\
-                    "makes it crash."
+                'unsupportedbypylxd': (
+                    "This attribute is not supported by "
+                    "pylxd. We want to test whether the mere presence of it "
+                    "makes it crash.")
             }},
         'method': 'GET',
-        'url': r'^http://pylxd.test/1.0/containers/an-container$',
+        'url': r'^http://pylxd.test/1.0/instances/an-instance$',
     },
     {
         'json': {
@@ -419,13 +423,13 @@ RULES = [
                 'processes': 100,
             }},
         'method': 'GET',
-        'url': r'^http://pylxd.test/1.0/containers/an-container/state$',  # NOQA
+        'url': r'^http://pylxd.test/1.0/instances/an-instance/state$',  # NOQA
     },
     {
         'json': {
             'type': 'sync',
             'metadata': {
-                'name': 'an-new-remote-container',
+                'name': 'an-new-remote-instance',
 
                 'architecture': "x86_64",
                 'config': {
@@ -437,12 +441,13 @@ RULES = [
                 'location': "an-remote",
                 'status': "Running",
                 'status_code': 103,
-                'unsupportedbypylxd': "This attribute is not supported by "\
-                    "pylxd. We want to test whether the mere presence of it "\
-                    "makes it crash."
+                'unsupportedbypylxd': (
+                    "This attribute is not supported by "
+                    "pylxd. We want to test whether the mere presence of it "
+                    "makes it crash.")
             }},
         'method': 'GET',
-        'url': r'^http://pylxd.test/1.0/containers/an-new-remote-container$',
+        'url': r'^http://pylxd.test/1.0/instances/an-new-remote-instance$',
     },
     {
         'status_code': 202,
@@ -450,12 +455,12 @@ RULES = [
             'type': 'async',
             'operation': '/1.0/operations/operation-abc?project=default'},
         'method': 'PUT',
-        'url': r'^http://pylxd.test/1.0/containers/an-container/state$',  # NOQA
+        'url': r'^http://pylxd.test/1.0/instances/an-instance/state$',  # NOQA
     },
     {
-        'json': container_POST,
+        'json': instance_POST,
         'method': 'POST',
-        'url': r'^http://pylxd.test/1.0/containers/an-container$',
+        'url': r'^http://pylxd.test/1.0/instances/an-instance$',
     },
     {
         'text': json.dumps({
@@ -463,12 +468,12 @@ RULES = [
             'operation': '/1.0/operations/operation-abc?project=default'}),
         'status_code': 202,
         'method': 'PUT',
-        'url': r'^http://pylxd.test/1.0/containers/an-container$',
+        'url': r'^http://pylxd.test/1.0/instances/an-instance$',
     },
     {
-        'text': container_DELETE,
+        'text': instance_DELETE,
         'method': 'DELETE',
-        'url': r'^http://pylxd.test/1.0/containers/an-container$',
+        'url': r'^http://pylxd.test/1.0/instances/an-instance$',
     },
     {
         'json': {
@@ -486,23 +491,23 @@ RULES = [
             'operation': '/1.0/operations/operation-abc?project=default'},
         'status_code': 202,
         'method': 'POST',
-        'url': r'^http://pylxd.test/1.0/containers/an-container/exec$',  # NOQA
+        'url': r'^http://pylxd.test/1.0/instances/an-instance/exec$',  # NOQA
     },
     {
-        'json': container_PUT,
+        'json': instance_PUT,
         'method': 'PUT',
-        'url': r'^http://pylxd.test/1.0/containers/an-container$',
+        'url': r'^http://pylxd.test/1.0/instances/an-instance$',
     },
 
-    # Container Snapshots
+    # Instance Snapshots
     {
         'text': json.dumps({
             'type': 'sync',
             'metadata': [
-                '/1.0/containers/an_container/snapshots/an-snapshot',
+                '/1.0/instances/an_instance/snapshots/an-snapshot',
             ]}),
         'method': 'GET',
-        'url': r'^http://pylxd.test/1.0/containers/an-container/snapshots$',  # NOQA
+        'url': r'^http://pylxd.test/1.0/instances/an-instance/snapshots$',  # NOQA
     },
     {
         'text': json.dumps({
@@ -510,17 +515,17 @@ RULES = [
             'operation': '/1.0/operations/operation-abc?project=default'}),
         'status_code': 202,
         'method': 'POST',
-        'url': r'^http://pylxd.test/1.0/containers/an-container/snapshots$',  # NOQA
+        'url': r'^http://pylxd.test/1.0/instances/an-instance/snapshots$',  # NOQA
     },
     {
         'text': json.dumps({
             'type': 'sync',
             'metadata': {
-                'name': 'an_container/an-snapshot',
+                'name': 'an_instance/an-snapshot',
                 'stateful': False,
             }}),
         'method': 'GET',
-        'url': r'^http://pylxd.test/1.0/containers/an-container/snapshots/an-snapshot$',  # NOQA
+        'url': r'^http://pylxd.test/1.0/instances/an-instance/snapshots/an-snapshot$',  # NOQA
     },
     {
         'text': json.dumps({
@@ -528,33 +533,33 @@ RULES = [
             'operation': '/1.0/operations/operation-abc?project=default'}),
         'status_code': 202,
         'method': 'POST',
-        'url': r'^http://pylxd.test/1.0/containers/an-container/snapshots/an-snapshot$',  # NOQA
+        'url': r'^http://pylxd.test/1.0/instances/an-instance/snapshots/an-snapshot$',  # NOQA
     },
     {
         'text': snapshot_DELETE,
         'method': 'DELETE',
-        'url': r'^http://pylxd.test/1.0/containers/an-container/snapshots/an-snapshot$',  # NOQA
+        'url': r'^http://pylxd.test/1.0/instances/an-instance/snapshots/an-snapshot$',  # NOQA
     },
 
 
-    # Container files
+    # Instance files
     {
         'text': 'This is a getted file',
         'method': 'GET',
-        'url': r'^http://pylxd.test/1.0/containers/an-container/files\?path=%2Ftmp%2Fgetted$',  # NOQA
+        'url': r'^http://pylxd.test/1.0/instances/an-instance/files\?path=%2Ftmp%2Fgetted$',  # NOQA
     },
     {
         'text': '{"some": "value"}',
         'method': 'GET',
-        'url': r'^http://pylxd.test/1.0/containers/an-container/files\?path=%2Ftmp%2Fjson-get$',  # NOQA
+        'url': r'^http://pylxd.test/1.0/instances/an-instance/files\?path=%2Ftmp%2Fjson-get$',  # NOQA
     },
     {
         'method': 'POST',
-        'url': r'^http://pylxd.test/1.0/containers/an-container/files\?path=%2Ftmp%2Fputted$',  # NOQA
+        'url': r'^http://pylxd.test/1.0/instances/an-instance/files\?path=%2Ftmp%2Fputted$',  # NOQA
     },
     {
         'method': 'DELETE',
-        'url': r'^http://pylxd.test/1.0/containers/an-container/files\?path=%2Ftmp%2Fputted$',  # NOQA
+        'url': r'^http://pylxd.test/1.0/instances/an-instance/files\?path=%2Ftmp%2Fputted$',  # NOQA
     },
 
 
@@ -842,9 +847,12 @@ RULES = [
         'json': {
             'type': 'sync',
             'metadata': [
-                '/1.0/storage-pools/default/volumes/containers/c1',
-                '/1.0/storage-pools/default/volumes/containers/c2',
+                '/1.0/storage-pools/default/volumes/instances/c1',
+                '/1.0/storage-pools/default/volumes/instances/c2',
                 '/1.0/storage-pools/default/volumes/containers/c3',
+                '/1.0/storage-pools/default/volumes/containers/c4',
+                '/1.0/storage-pools/default/volumes/virtual-machines/vm1',
+                '/1.0/storage-pools/default/volumes/virtual-machines/vm2',
                 '/1.0/storage-pools/default/volumes/images/i1',
                 '/1.0/storage-pools/default/volumes/images/i2',
                 '/1.0/storage-pools/default/volumes/custom/cu1',

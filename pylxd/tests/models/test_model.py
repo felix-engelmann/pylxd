@@ -28,6 +28,10 @@ class Item(model.Model):
         return self.client.api.items[self.name]
 
 
+class ChildItem(Item):
+    """A fake model child class."""
+
+
 class TestModel(testing.PyLXDTestCase):
     """Tests for pylxd.model.Model."""
 
@@ -119,6 +123,13 @@ class TestModel(testing.PyLXDTestCase):
         except AttributeError:
             pass
 
+    def test_init_sets_attributes_on_child_class(self):
+        """Ensure that .__attributes__ is set on a child class."""
+        item = Item(self.client)
+        child_item = ChildItem(self.client)
+        self.assertEqual(
+            len(item.__attributes__), len(child_item.__attributes__))
+
     def test_unknown_attribute(self):
         """Setting unknown attributes raise an exception."""
         def set_unknown_attribute():
@@ -138,6 +149,14 @@ class TestModel(testing.PyLXDTestCase):
         item = Item(self.client, name='an-item')
 
         self.assertEqual(1000, item.age)
+
+    def test_iter(self):
+        """Test models can be iterated over."""
+        item = Item(self.client, name='an-item')
+
+        self.assertDictEqual(
+            {'name': 'an-item', 'age': 1000, 'data': {'key': 'val'}},
+            dict(item))
 
     def test_sync(self):
         """A sync will update attributes from the server."""

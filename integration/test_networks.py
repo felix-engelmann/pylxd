@@ -72,6 +72,9 @@ class TestNetworks(NetworkTestCase):
             'description': 'network description',
         }
 
+        if self.client.has_api_extension('network_hwaddr'):
+            kwargs['config']['bridge.hwaddr'] = '00:16:3e:12:34:56'
+
         network = self.client.networks.create(**kwargs)
         self.addCleanup(self.delete_network, kwargs['name'])
 
